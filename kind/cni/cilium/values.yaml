@@ -1,0 +1,23 @@
+# Só os valores alterados em relação ao padrão do chart.
+# eBPF substitui o kube-proxy (kubeProxyMode: none no cluster.yaml)
+kubeProxyReplacement: true
+
+# Sem kube-proxy o Cilium não tem o Service "kubernetes" para achar o API server,
+# então aponta direto para o container do control-plane.
+# Com mais de um control-plane use: lab-external-load-balancer
+k8sServiceHost: lab-control-plane
+k8sServicePort: 6443
+
+# Usa o podCIDR que o kubeadm atribui a cada nó (podSubnet do cluster.yaml)
+ipam:
+  mode: kubernetes
+
+operator:
+  replicas: 1
+
+hubble:
+  enabled: true
+  relay:
+    enabled: true
+  ui:
+    enabled: true

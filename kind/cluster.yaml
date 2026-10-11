@@ -1,0 +1,69 @@
+# Cluster kind configurado como um cluster kubeadm:
+# sem CNI padrão, sem kube-proxy (o Cilium substitui) e subnets explícitas.
+# Docs: https://kind.sigs.k8s.io/docs/user/configuration/
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: lab
+
+networking:
+  ipFamily: ipv4
+  apiServerAddress: "127.0.0.1"
+  apiServerPort: 6443
+  podSubnet: "10.244.0.0/16"
+  serviceSubnet: "10.96.0.0/12"
+  # Não instala o kindnet: os nós ficam NotReady até você instalar um CNI
+  disableDefaultCNI: true
+  # none | iptables | ipvs | nftables
+  # "none" só funciona com Cilium. Para Calico use iptables/ipvs/nftables.
+  kubeProxyMode: "none"
+
+# Patches aplicados na config do kubeadm de todos os nós
+# (o equivalente ao kubeadm-config.yaml de um cluster kubeadm)
+kubeadmConfigPatches:
+  # Expõe as métricas do control-plane para o Prometheus conseguir coletar
+  - |
+    kind: ClusterConfiguration
+    controllerManager:
+      extraArgs:
+        bind-address: "0.0.0.0"
+    scheduler:
+      extraArgs:
+        bind-address: "0.0.0.0"
+    etcd:
+      local:
+        extraArgs:
+          listen-metrics-urls: "http://0.0.0.0:2381"
+  - |
+    kind: KubeletConfiguration
+    serializeImagePulls: false
+  # Só tem efeito quando kubeProxyMode != none
+  # strictARP é necessário para o MetalLB com IPVS
+  - |
+    kind: KubeProxyConfiguration
+    metricsBindAddress: "0.0.0.0:10249"
+    ipvs:
+      strictARP: true
+
+nodes:
+  - role: control-plane
+    # image: kindest/node:v1.32.0
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    # Publica 80/443 no host para usar com um ingress controller
+    extraPortMappings:
+      - { containerPort: 80, hostPort: 80, protocol: TCP }
+      - { containerPort: 443, hostPort: 443, protocol: TCP }
+
+  # Workers em zonas diferentes para testar topology spread / aware routing
+  - role: worker
+    labels:
+      topology.kubernetes.io/region: lab
+      topology.kubernetes.io/zone: lab-a
+  - role: worker
+    labels:
+      topology.kubernetes.io/region: lab
+      topology.kubernetes.io/zone: lab-b

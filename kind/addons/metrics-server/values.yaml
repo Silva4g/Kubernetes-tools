@@ -1,0 +1,3 @@
+# O kubelet do kind usa certificado self-signed
+args:
+  - --kubelet-insecure-tls
