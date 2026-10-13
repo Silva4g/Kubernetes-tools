@@ -1,0 +1,19 @@
+# Libera só o pod "bad-pod" da ValidatingPolicy pod-best-practices.
+# Só funciona com features.policyExceptions.enabled=true no chart.
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: allow-bad-pod
+  namespace: kyv-test
+spec:
+  policyRefs:
+    - kind: ValidatingPolicy
+      name: pod-best-practices
+  matchConditions:
+    - name: only-bad-pod
+      expression: object.metadata.name == 'bad-pod'
+  # Expira sozinha: a exceção para de valer nessa data
+  expiresAt: "2026-12-31T00:00:00Z"
+  properties:
+    reason: teste do lab
+    ticket: LAB-1

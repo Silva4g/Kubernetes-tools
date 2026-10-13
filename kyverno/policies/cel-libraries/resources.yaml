@@ -1,0 +1,41 @@
+# ConfigMap lido pela policy via resource.Get
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cel-demo-config
+  namespace: kyverno
+data:
+  # image("nginx").registry() devolve "index.docker.io", não "docker.io"
+  registries: |
+    - index.docker.io
+    - registry.k8s.io
+  limits: '{"maxContainers": 2}'
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cel-demo
+  labels:
+    lab/cel-demo: "true"
+---
+# Passa: imagem sem registry = index.docker.io
+apiVersion: v1
+kind: Pod
+metadata:
+  name: allowed
+  namespace: cel-demo
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.27-alpine
+---
+# Bloqueado: quay.io não está na lista
+apiVersion: v1
+kind: Pod
+metadata:
+  name: denied
+  namespace: cel-demo
+spec:
+  containers:
+    - name: app
+      image: quay.io/prometheus/busybox:latest

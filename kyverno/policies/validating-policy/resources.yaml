@@ -1,0 +1,23 @@
+# kubectl apply -f resources.yaml → good-pod passa, bad-pod é bloqueado
+apiVersion: v1
+kind: Pod
+metadata:
+  name: good-pod
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.27-alpine
+      resources:
+        limits:
+          memory: 64Mi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-pod
+spec:
+  containers:
+    - name: nginx
+      image: nginx:latest

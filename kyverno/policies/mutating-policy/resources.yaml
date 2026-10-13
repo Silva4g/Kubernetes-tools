@@ -1,0 +1,22 @@
+# kubectl apply -f resources.yaml
+# kubectl get pod mutate-me -o yaml → veja label, imagePullPolicy e securityContext
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mutate-me
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.27-alpine
+      imagePullPolicy: Always
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: skip-me
+  annotations:
+    lab/skip-mutation: "true"
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.27-alpine

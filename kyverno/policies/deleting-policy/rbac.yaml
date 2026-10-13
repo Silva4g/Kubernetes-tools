@@ -1,0 +1,14 @@
+# O cleanup-controller só apaga o que tem permissão. Por padrão ele NÃO pode
+# listar/apagar pods. A label abaixo agrega esta ClusterRole na role dele
+# (veja: kubectl get clusterrole kyverno:cleanup-controller -o yaml).
+# Sem isto o log mostra: pods is forbidden ... kyverno-cleanup-controller
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kyverno:cleanup-pods
+  labels:
+    rbac.kyverno.io/aggregate-to-cleanup-controller: "true"
+rules:
+  - apiGroups: ['']
+    resources: ['pods']
+    verbs: ['get', 'list', 'watch', 'delete']

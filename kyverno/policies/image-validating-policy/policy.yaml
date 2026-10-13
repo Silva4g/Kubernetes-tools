@@ -1,0 +1,54 @@
+# ImageValidatingPolicy: verifica assinatura (cosign/notary) e attestations
+# das imagens antes de deixar o pod subir.
+# Usa a imagem de teste do próprio Kyverno, assinada com a chave abaixo.
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: verify-signed-images
+spec:
+  validationActions: [Deny]
+  # Verificar assinatura consulta o registry, então dá mais tempo ao webhook
+  webhookConfiguration:
+    timeoutSeconds: 15
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ['']
+        apiVersions: ['v1']
+        operations: ['CREATE', 'UPDATE']
+        resources: ['pods']
+  # Só as imagens que batem com o glob são verificadas
+  matchImageReferences:
+    - glob: 'ghcr.io/kyverno/test-verify-image*'
+  attestors:
+    # Chave pública de teste publicada na doc do Kyverno (verify-images/sigstore)
+    - name: kyverno-test-key
+      cosign:
+        key:
+          data: |
+            -----BEGIN PUBLIC KEY-----
+            MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEstG5Xl7UxkQsmLUxdmS85HLgYBFy
+            c/P/oQ22iazkKm8P0sNlaZiaZC4TSEea3oh2Pim0+wxSubhKoK+7jq9Egg==
+            -----END PUBLIC KEY-----
+        # Essa imagem foi assinada sem registro no Rekor (transparency log),
+        # então o lab ignora a checagem do tlog. Em produção não faça isso:
+        # use o Rekor ou passe ctlog.tsaCertChain com a cadeia do TSA usado.
+        ctlog:
+          insecureIgnoreTlog: true
+    # Exemplo keyless (assinado via GitHub Actions/OIDC), não usado abaixo:
+    - name: github-keyless
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subjectRegExp: https://github.com/minha-org/.*
+  validationConfigurations:
+    # Troca a tag pelo digest no pod (garante que roda exatamente o que foi verificado)
+    mutateDigest: true
+    verifyDigest: true
+    required: true
+  validations:
+    # images.containers = lista das imagens dos containers que bateram no glob.
+    # verifyImageSignatures devolve quantos attestors validaram a imagem.
+    - expression: >-
+        images.containers.map(img, verifyImageSignatures(img, [attestors['kyverno-test-key']])).all(n, n > 0)
+      message: A imagem não está assinada com a chave esperada.

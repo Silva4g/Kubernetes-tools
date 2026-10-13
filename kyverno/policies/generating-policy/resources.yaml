@@ -1,0 +1,8 @@
+# kubectl apply -f resources.yaml
+# kubectl -n team-a get networkpolicy → default-deny e allow-dns
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-a
+  labels:
+    lab/isolated: "true"

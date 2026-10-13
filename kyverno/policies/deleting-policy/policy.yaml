@@ -1,0 +1,28 @@
+# DeletingPolicy: o cleanup-controller roda no "schedule" (cron) e apaga os
+# recursos que batem com matchConstraints + conditions. Não é admission:
+# não bloqueia nada, só limpa periodicamente.
+apiVersion: policies.kyverno.io/v1
+kind: DeletingPolicy
+metadata:
+  name: cleanup-temporary-pods
+spec:
+  # A cada minuto (para ver funcionando rápido no lab)
+  schedule: '*/1 * * * *'
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ['']
+        apiVersions: ['v1']
+        resources: ['pods']
+        scope: Namespaced
+    objectSelector:
+      matchLabels:
+        lab/temporary: "true"
+  variables:
+    # TTL vem da label lab/ttl (ex.: 2m, 1h). Sem a label, usa 5m.
+    - name: ttl
+      expression: duration(object.metadata.labels[?'lab/ttl'].orValue('5m'))
+    - name: age
+      expression: time.now() - timestamp(object.metadata.creationTimestamp)
+  conditions:
+    - name: expired
+      expression: variables.age > variables.ttl

@@ -1,0 +1,63 @@
+# MutatingPolicy: altera o recurso antes de ele ser salvo.
+# Dois jeitos de mutar: ApplyConfiguration (merge, estilo server-side apply)
+# e JSONPatch (operações add/replace/remove em paths).
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: pod-defaults
+spec:
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ['']
+        apiVersions: ['v1']
+        operations: ['CREATE']
+        resources: ['pods']
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, kyverno]
+  # Só muta pods que não pediram para ser ignorados
+  matchConditions:
+    - name: not-opted-out
+      expression: >-
+        !has(object.metadata.annotations) ||
+        object.metadata.annotations[?'lab/skip-mutation'].orValue('') != 'true'
+  mutations:
+    # 1) ApplyConfiguration: descreve o "estado desejado" e o Kyverno faz o merge.
+    #    Containers são mesclados pelo name, então só o imagePullPolicy muda.
+    #    Campos de Object{} são identificadores CEL: chave com "/" ou "." vai
+    #    entre crases (`lab/mutated-by`), não entre aspas.
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          Object{
+            metadata: Object.metadata{
+              labels: Object.metadata.labels{
+                `lab/mutated-by`: "kyverno"
+              }
+            },
+            spec: Object.spec{
+              containers: object.spec.containers.map(c, Object.spec.containers{
+                name: c.name,
+                imagePullPolicy: "IfNotPresent"
+              })
+            }
+          }
+
+    # 2) JSONPatch: adiciona securityContext só se o pod não tiver um.
+    #    Retorna uma lista de operações (vazia = não faz nada).
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: >-
+          has(object.spec.securityContext) && has(object.spec.securityContext.runAsNonRoot)
+          ? []
+          : [
+              JSONPatch{
+                op: "add",
+                path: "/spec/securityContext",
+                value: Object.spec.securityContext{
+                  seccompProfile: Object.spec.securityContext.seccompProfile{type: "RuntimeDefault"}
+                }
+              }
+            ]

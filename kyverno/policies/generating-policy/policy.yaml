@@ -1,0 +1,55 @@
+# GeneratingPolicy: cria outros recursos quando um recurso "gatilho" aparece.
+# Aqui: todo Namespace novo com a label lab/isolated=true ganha uma
+# NetworkPolicy default-deny e uma liberando DNS.
+apiVersion: policies.kyverno.io/v1
+kind: GeneratingPolicy
+metadata:
+  name: namespace-default-deny
+spec:
+  evaluation:
+    # Mantém os recursos gerados sincronizados: se alguém apagar ou editar
+    # a NetworkPolicy, o Kyverno recria. Apagar o namespace apaga tudo.
+    synchronize:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ['']
+        apiVersions: ['v1']
+        operations: ['CREATE']
+        resources: ['namespaces']
+    objectSelector:
+      matchLabels:
+        lab/isolated: "true"
+  variables:
+    - name: ns
+      expression: object.metadata.name
+    # dyn() evita erro de tipo do CEL ao misturar valores diferentes no mapa
+    - name: netpols
+      expression: >-
+        [
+          {
+            "apiVersion": dyn("networking.k8s.io/v1"),
+            "kind": dyn("NetworkPolicy"),
+            "metadata": dyn({"name": "default-deny", "namespace": variables.ns}),
+            "spec": dyn({
+              "podSelector": {},
+              "policyTypes": ["Ingress", "Egress"]
+            })
+          },
+          {
+            "apiVersion": dyn("networking.k8s.io/v1"),
+            "kind": dyn("NetworkPolicy"),
+            "metadata": dyn({"name": "allow-dns", "namespace": variables.ns}),
+            "spec": dyn({
+              "podSelector": {},
+              "policyTypes": ["Egress"],
+              "egress": [{
+                "to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}}}],
+                "ports": [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}]
+              }]
+            })
+          }
+        ]
+  generate:
+    # generator.Apply(namespace, [recursos]) cria os recursos no namespace
+    - expression: generator.Apply(variables.ns, variables.netpols)

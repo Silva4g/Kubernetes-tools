@@ -1,0 +1,66 @@
+# CEL Libraries: funções extras que o Kyverno adiciona ao CEL padrão.
+# Funcionam em qualquer policy CEL (Validating, Mutating, Generating...).
+# Esta ValidatingPolicy usa várias delas de uma vez.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: cel-libraries-demo
+spec:
+  validationActions: [Deny]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ['']
+        apiVersions: ['v1']
+        operations: ['CREATE']
+        resources: ['pods']
+    namespaceSelector:
+      matchLabels:
+        lab/cel-demo: "true"
+  variables:
+    # resource library: lê qualquer recurso do cluster (aqui o ConfigMap de config)
+    #   resource.Get(apiVersion, resource, namespace, name)
+    #   resource.List(apiVersion, resource, namespace)
+    - name: config
+      expression: resource.Get("v1", "configmaps", "kyverno", "cel-demo-config")
+
+    # yaml library: transforma string YAML em objeto
+    - name: allowedRegistries
+      expression: yaml.parse(variables.config.data["registries"])
+
+    # json library: mesma coisa para JSON
+    - name: limits
+      expression: json.unmarshal(variables.config.data["limits"])
+
+    # image library: faz parse da referência da imagem
+    #   image(ref).registry() / .repository() / .tag() / .digest()
+    - name: registries
+      expression: object.spec.containers.map(c, image(c.image).registry())
+
+    # user library: separa namespace e nome de um ServiceAccount
+    #   system:serviceaccount:<ns>:<nome>
+    - name: requester
+      expression: request.userInfo.username
+
+  validations:
+    - expression: variables.registries.all(r, r in variables.allowedRegistries)
+      messageExpression: >-
+        'Registry não permitido: ' + variables.registries.filter(r, !(r in variables.allowedRegistries)).join(', ')
+        + '. Permitidos: ' + variables.allowedRegistries.join(', ')
+
+    - expression: size(object.spec.containers) <= int(variables.limits.maxContainers)
+      messageExpression: >-
+        'Máximo de ' + string(variables.limits.maxContainers) + ' containers por pod.'
+
+    # ServiceAccounts de fora do namespace "ci" não podem criar pods aqui
+    - expression: >-
+        !variables.requester.startsWith('system:serviceaccount:')
+        || parseServiceAccount(variables.requester).Namespace == 'ci'
+      message: Só ServiceAccounts do namespace ci podem criar pods aqui.
+
+  # auditAnnotations aceita CEL também; útil para ver o valor das funções:
+  # random() gera string aleatória, sha256() faz hash
+  auditAnnotations:
+    - key: request-id
+      valueExpression: random("[a-z0-9]{8}")
+    - key: pod-hash
+      valueExpression: sha256(object.metadata.name)
